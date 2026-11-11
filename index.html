@@ -21,36 +21,24 @@ table{width:100%;border-collapse:collapse;background:var(--card);border:1px soli
 td{padding:12px;border-bottom:1px solid var(--line)}
 td:first-child{direction:ltr;text-align:left;font-weight:600}
 .done{margin-top:16px;width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-ink);font:inherit;font-size:17px;font-weight:600;cursor:pointer}
+.gbtn{width:100%;padding:15px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;font-size:17px;font-weight:600;cursor:pointer;margin-top:16px}
+.out{background:none;border:0;color:var(--muted);font:inherit;font-size:14px;padding:0;margin-top:24px;cursor:pointer}
+.err{color:#b3412f;margin-top:12px}
 .msg{color:var(--muted);text-align:center;padding:32px 0}
 </style>
 </head>
 <body>
-<main id="app"><p class="msg">كنحمل الدروس…</p></main>
+<main id="app"><p class="msg">كنحمل…</p></main>
 
 <script type="module">
-import { db } from "./config.js";
-import { collection, getDocs, query, orderBy, doc, setDoc, increment }
+import { db, auth } from "./config.js";
+import { collection, getDocs, getDoc, query, orderBy, doc, setDoc, increment, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const app = document.getElementById("app");
 const today = new Date().toISOString().slice(0, 10);
-
-(async () => {
-  try {
-    if (!localStorage.getItem("visited")) {
-      await setDoc(doc(db, "stats", "visitors"), { total: increment(1) }, { merge: true });
-      localStorage.setItem("visited", "1");
-    }
-    if (localStorage.getItem("lastDay") !== today) {
-      await setDoc(doc(db, "daily", today), { count: increment(1) }, { merge: true });
-      localStorage.setItem("lastDay", today);
-    }
-  } catch (e) { console.error(e); }
-})();
-
-let done = [];
-try { done = JSON.parse(localStorage.getItem("done") || "[]"); } catch (e) {}
-const saveDone = () => { try { localStorage.setItem("done", JSON.stringify(done)); } catch (e) {} };
 
 function el(tag, props = {}, ...kids) {
   const n = Object.assign(document.createElement(tag), props);
@@ -58,7 +46,47 @@ function el(tag, props = {}, ...kids) {
   return n;
 }
 
+let done = [];
+try { done = JSON.parse(localStorage.getItem("done") || "[]"); } catch (e) {}
+const saveDone = () => { try { localStorage.setItem("done", JSON.stringify(done)); } catch (e) {} };
+
 let lessons = [];
+
+function showLogin(error = "") {
+  const g = el("button", { className: "gbtn", textContent: "دخل بـ Google" });
+  g.onclick = async () => {
+    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+    catch (e) { console.error(e); showLogin("ما قدرناش ندخلو. جرب فـ Chrome وعاود."); }
+  };
+  app.replaceChildren(
+    el("h1", { textContent: "تعلم الإنجليزية" }),
+    el("p", { className: "sub", textContent: "دخل بحساب Google ديالك باش تبدا الدروس." }),
+    g,
+    error ? el("p", { className: "err", textContent: error }) : ""
+  );
+}
+
+async function register(u) {
+  try {
+    const ref = doc(db, "learners", u.uid);
+    const s = await getDoc(ref);
+    if (!s.exists()) {
+      await setDoc(ref, { email: u.email, name: u.displayName || "", createdAt: serverTimestamp() });
+      await setDoc(doc(db, "stats", "visitors"), { total: increment(1) }, { merge: true });
+    }
+    const k = "lastDay_" + u.uid;
+    if (localStorage.getItem(k) !== today) {
+      await setDoc(doc(db, "daily", today), { count: increment(1) }, { merge: true });
+      localStorage.setItem(k, today);
+    }
+  } catch (e) { console.error(e); }
+}
+
+function logoutBtn() {
+  const b = el("button", { className: "out", textContent: "خروج" });
+  b.onclick = () => signOut(auth);
+  return b;
+}
 
 function showList() {
   app.replaceChildren(
@@ -73,6 +101,7 @@ function showList() {
     b.onclick = () => showLesson(l);
     app.append(b);
   });
+  app.append(logoutBtn());
 }
 
 function showLesson(l) {
@@ -95,14 +124,19 @@ function showLesson(l) {
   app.append(finish);
 }
 
-try {
-  const snap = await getDocs(query(collection(db, "lessons"), orderBy("createdAt")));
-  lessons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  showList();
-} catch (e) {
-  console.error(e);
-  app.replaceChildren(el("p", { className: "msg", textContent: "ما قدرناش نحملو الدروس. تأكد من config.js ومن قواعد Firestore." }));
-}
+onAuthStateChanged(auth, async u => {
+  if (!u) return showLogin();
+  app.replaceChildren(el("p", { className: "msg", textContent: "كنحمل الدروس…" }));
+  register(u);
+  try {
+    const snap = await getDocs(query(collection(db, "lessons"), orderBy("createdAt")));
+    lessons = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    showList();
+  } catch (e) {
+    console.error(e);
+    app.replaceChildren(el("p", { className: "msg", textContent: "ما قدرناش نحملو الدروس. خرج ودخل من جديد." }), logoutBtn());
+  }
+});
 </script>
 </body>
 </html>
