@@ -21,6 +21,8 @@ input,textarea{width:100%;padding:12px;margin-bottom:10px;font:inherit;font-size
 textarea{min-height:90px;resize:vertical}
 button{font:inherit;cursor:pointer}
 .primary{width:100%;padding:13px;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-size:16px;font-weight:600}
+.google{width:100%;padding:13px;margin-bottom:14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:16px;font-weight:600}
+.or{text-align:center;color:var(--muted);margin:0 0 14px;font-size:14px}
 .row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border:0}
 .del{background:none;border:0;color:var(--danger);font-size:15px}
@@ -33,11 +35,12 @@ button{font:inherit;cursor:pointer}
 
 <script type="module">
 import { db, auth } from "./config.js";
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged }
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { collection, getDocs, getDoc, doc, addDoc, deleteDoc, query, orderBy, limit, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+const OWNER = "elkaderyabdelhak@gmail.com";
 const app = document.getElementById("app");
 function el(tag, props = {}, ...kids) {
   const n = Object.assign(document.createElement(tag), props);
@@ -46,6 +49,11 @@ function el(tag, props = {}, ...kids) {
 }
 
 function showLogin(error = "") {
+  const g = el("button", { className: "google", textContent: "دخل بـ Google" });
+  g.onclick = async () => {
+    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+    catch (e) { console.error(e); showLogin("ما قدرناش ندخلو بـ Google. عاود."); }
+  };
   const email = el("input", { type: "email", placeholder: "الإيميل", autocomplete: "username" });
   const pass = el("input", { type: "password", placeholder: "كلمة السر", autocomplete: "current-password" });
   const btn = el("button", { className: "primary", textContent: "دخل" });
@@ -54,7 +62,9 @@ function showLogin(error = "") {
     catch (e) { showLogin("الإيميل ولا كلمة السر غالطين"); }
   };
   app.replaceChildren(el("h1", { textContent: "لوحة التحكم" }),
-    el("div", { className: "box" }, error ? el("p", { className: "err", textContent: error }) : "", email, pass, btn));
+    el("div", { className: "box" },
+      error ? el("p", { className: "err", textContent: error }) : "",
+      g, el("p", { className: "or", textContent: "ولا" }), email, pass, btn));
 }
 
 async function showDashboard() {
@@ -109,7 +119,14 @@ async function showDashboard() {
     el("h2", { textContent: "الدروس" }), list, el("p", {}, out));
 }
 
-onAuthStateChanged(auth, u => u ? showDashboard() : showLogin());
+onAuthStateChanged(auth, async u => {
+  if (!u) return showLogin();
+  if (u.email !== OWNER) {
+    await signOut(auth);
+    return showLogin("هاد الحساب ماشي مسموح ليه. دخل بـ " + OWNER);
+  }
+  showDashboard();
+});
 </script>
 </body>
 </html>
