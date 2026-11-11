@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لوحة التحكم</title>
+<style>
+:root{--bg:#f4f1ea;--card:#fff;--ink:#1d2433;--muted:#6b7385;--accent:#2b5adb;--accent-ink:#fff;--line:#e2dfd6;--danger:#b3412f}
+@media (prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1b2029;--ink:#eceff5;--muted:#8d96a8;--accent:#6c8cff;--accent-ink:#0b0e14;--line:#2a3140;--danger:#e07a68;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI",Tahoma,"Noto Sans Arabic",sans-serif;padding:24px 16px}
+main{max-width:560px;margin:0 auto}
+h1{font-size:26px;margin:0 0 16px}
+h2{font-size:18px;margin:28px 0 10px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.stats{display:flex;gap:12px}
+.stat{flex:1;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.stat b{display:block;font-size:30px}
+.stat span{color:var(--muted);font-size:14px}
+input,textarea{width:100%;padding:12px;margin-bottom:10px;font:inherit;font-size:16px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+textarea{min-height:90px;resize:vertical}
+button{font:inherit;cursor:pointer}
+.primary{width:100%;padding:13px;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-size:16px;font-weight:600}
+.row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border:0}
+.del{background:none;border:0;color:var(--danger);font-size:15px}
+.muted{color:var(--muted);font-size:14px}
+.err{color:var(--danger);margin:0 0 10px}
+</style>
+</head>
+<body>
+<main id="app"></main>
+
+<script type="module">
+import { db, auth } from "./config.js";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { collection, getDocs, getDoc, doc, addDoc, deleteDoc, query, orderBy, limit, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const app = document.getElementById("app");
+function el(tag, props = {}, ...kids) {
+  const n = Object.assign(document.createElement(tag), props);
+  n.append(...kids);
+  return n;
+}
+
+function showLogin(error = "") {
+  const email = el("input", { type: "email", placeholder: "الإيميل", autocomplete: "username" });
+  const pass = el("input", { type: "password", placeholder: "كلمة السر", autocomplete: "current-password" });
+  const btn = el("button", { className: "primary", textContent: "دخل" });
+  btn.onclick = async () => {
+    try { await signInWithEmailAndPassword(auth, email.value, pass.value); }
+    catch (e) { showLogin("الإيميل ولا كلمة السر غالطين"); }
+  };
+  app.replaceChildren(el("h1", { textContent: "لوحة التحكم" }),
+    el("div", { className: "box" }, error ? el("p", { className: "err", textContent: error }) : "", email, pass, btn));
+}
+
+async function showDashboard() {
+  app.replaceChildren(el("p", { className: "muted", textContent: "كنحمل…" }));
+
+  let total = 0, todayCount = 0, days = [];
+  try {
+    const t = await getDoc(doc(db, "stats", "visitors"));
+    total = t.exists() ? t.data().total : 0;
+    const d = await getDocs(query(collection(db, "daily"), orderBy("__name__", "desc"), limit(7)));
+    days = d.docs.map(x => ({ day: x.id, count: x.data().count }));
+    const key = new Date().toISOString().slice(0, 10);
+    todayCount = (days.find(x => x.day === key) || {}).count || 0;
+  } catch (e) { console.error(e); }
+
+  const lessonsSnap = await getDocs(query(collection(db, "lessons"), orderBy("createdAt", "desc")));
+
+  const stats = el("div", { className: "stats" },
+    el("div", { className: "stat" }, el("b", { textContent: total }), el("span", { textContent: "مجموع الزوار" })),
+    el("div", { className: "stat" }, el("b", { textContent: todayCount }), el("span", { textContent: "اليوم" })));
+  const daysBox = el("div", { className: "box" });
+  if (!days.length) daysBox.append(el("span", { className: "muted", textContent: "ما كاين حتى زيارة مسجلة" }));
+  days.forEach(x => daysBox.append(el("div", { className: "row" }, el("span", { textContent: x.day }), el("b", { textContent: x.count }))));
+
+  const title = el("input", { placeholder: "عنوان الدرس (مثلا: Greetings)" });
+  const content = el("textarea", { placeholder: "نص الدرس بالإنجليزية…", style: "direction:ltr;text-align:left" });
+  const words = el("textarea", { placeholder: "الكلمات، كلمة فكل سطر:\nhello = مرحبا\nthank you = شكرا", style: "direction:ltr;text-align:left" });
+  const add = el("button", { className: "primary", textContent: "زيد الدرس" });
+  add.onclick = async () => {
+    if (!title.value.trim()) return;
+    const w = words.value.split("\n").map(s => s.split("=")).filter(p => p.length >= 2)
+      .map(p => ({ en: p[0].trim(), ar: p.slice(1).join("=").trim() }));
+    add.disabled = true;
+    await addDoc(collection(db, "lessons"), { title: title.value.trim(), content: content.value.trim(), words: w, createdAt: serverTimestamp() });
+    showDashboard();
+  };
+
+  const list = el("div", { className: "box" });
+  if (lessonsSnap.empty) list.append(el("span", { className: "muted", textContent: "ما زدتي حتى درس" }));
+  lessonsSnap.docs.forEach(d => {
+    const del = el("button", { className: "del", textContent: "مسح" });
+    del.onclick = async () => { if (confirm("واش بصح بغيتي تمسح هاد الدرس؟")) { await deleteDoc(doc(db, "lessons", d.id)); showDashboard(); } };
+    list.append(el("div", { className: "row" }, el("span", { textContent: d.data().title }), del));
+  });
+
+  const out = el("button", { className: "del", textContent: "خروج" });
+  out.onclick = () => signOut(auth);
+
+  app.replaceChildren(el("h1", { textContent: "لوحة التحكم" }), stats,
+    el("h2", { textContent: "آخر 7 أيام" }), daysBox,
+    el("h2", { textContent: "درس جديد" }), el("div", { className: "box" }, title, content, words, add),
+    el("h2", { textContent: "الدروس" }), list, el("p", {}, out));
+}
+
+onAuthStateChanged(auth, u => u ? showDashboard() : showLogin());
+</script>
+</body>
+</html>
