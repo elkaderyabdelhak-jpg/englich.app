@@ -23,8 +23,10 @@ button{font:inherit;cursor:pointer}
 .primary{width:100%;padding:13px;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-size:16px;font-weight:600}
 .google{width:100%;padding:13px;margin-bottom:14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:16px;font-weight:600}
 .or{text-align:center;color:var(--muted);margin:0 0 14px;font-size:14px}
-.row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border:0}
+.row .who{flex:1;min-width:0;overflow-wrap:anywhere}
+.row .who small{display:block;color:var(--muted);font-size:12px}
 .del{background:none;border:0;color:var(--danger);font-size:15px}
 .muted{color:var(--muted);font-size:14px}
 .err{color:var(--danger);margin:0 0 10px}
@@ -37,7 +39,7 @@ button{font:inherit;cursor:pointer}
 import { db, auth } from "./config.js";
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { collection, getDocs, getDoc, doc, addDoc, deleteDoc, query, orderBy, limit, serverTimestamp }
+import { collection, getDocs, doc, addDoc, deleteDoc, query, orderBy, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const OWNER = "elkaderyabdelhak@gmail.com";
@@ -67,27 +69,51 @@ function showLogin(error = "") {
       g, el("p", { className: "or", textContent: "ولا" }), email, pass, btn));
 }
 
+const dayOf = t => t.toISOString().slice(0, 10);
+
 async function showDashboard() {
   app.replaceChildren(el("p", { className: "muted", textContent: "كنحمل…" }));
 
-  let total = 0, todayCount = 0, days = [];
+  let learners = [], loadErr = "";
   try {
-    const t = await getDoc(doc(db, "stats", "visitors"));
-    total = t.exists() ? t.data().total : 0;
-    const d = await getDocs(query(collection(db, "daily"), orderBy("__name__", "desc"), limit(7)));
-    days = d.docs.map(x => ({ day: x.id, count: x.data().count }));
-    const key = new Date().toISOString().slice(0, 10);
-    todayCount = (days.find(x => x.day === key) || {}).count || 0;
-  } catch (e) { console.error(e); }
+    const snap = await getDocs(collection(db, "learners"));
+    learners = snap.docs.map(x => ({ id: x.id, ...x.data() }))
+      .filter(x => x.email !== OWNER)
+      .map(x => ({ ...x, date: x.createdAt && x.createdAt.toDate ? x.createdAt.toDate() : null }))
+      .sort((a, b) => (b.date || 0) - (a.date || 0));
+  } catch (e) {
+    console.error(e);
+    loadErr = "ما قدرناش نقراو لائحة المسجلين. خاص تعدل قواعد Firebase باش الإدمين يقرا learners.";
+  }
+
+  const perDay = {};
+  learners.forEach(x => { if (x.date) { const k = dayOf(x.date); perDay[k] = (perDay[k] || 0) + 1; } });
+  const days = Object.keys(perDay).sort().reverse().slice(0, 7).map(k => ({ day: k, count: perDay[k] }));
+  const todayCount = perDay[dayOf(new Date())] || 0;
 
   const lessonsSnap = await getDocs(query(collection(db, "lessons"), orderBy("createdAt", "desc")));
 
   const stats = el("div", { className: "stats" },
-    el("div", { className: "stat" }, el("b", { textContent: total }), el("span", { textContent: "مجموع الزوار" })),
-    el("div", { className: "stat" }, el("b", { textContent: todayCount }), el("span", { textContent: "اليوم" })));
+    el("div", { className: "stat" }, el("b", { textContent: learners.length }), el("span", { textContent: "مجموع المسجلين" })),
+    el("div", { className: "stat" }, el("b", { textContent: todayCount }), el("span", { textContent: "مسجلين اليوم" })));
+
   const daysBox = el("div", { className: "box" });
-  if (!days.length) daysBox.append(el("span", { className: "muted", textContent: "ما كاين حتى زيارة مسجلة" }));
+  if (!days.length) daysBox.append(el("span", { className: "muted", textContent: "ما كاين حتى تسجيل" }));
   days.forEach(x => daysBox.append(el("div", { className: "row" }, el("span", { textContent: x.day }), el("b", { textContent: x.count }))));
+
+  const learnersBox = el("div", { className: "box" });
+  if (!learners.length) learnersBox.append(el("span", { className: "muted", textContent: "ما كاين حتى متعلم مسجل" }));
+  learners.forEach(x => {
+    const del = el("button", { className: "del", textContent: "مسح" });
+    del.onclick = async () => {
+      if (!confirm("واش بصح بغيتي تمسح هاد المتعلم من اللائحة؟")) return;
+      try { await deleteDoc(doc(db, "learners", x.id)); showDashboard(); }
+      catch (e) { console.error(e); alert("ما قدرناش نمسحو. خاص تعدل قواعد Firebase."); }
+    };
+    const who = el("div", { className: "who" }, x.name || x.email || x.id,
+      el("small", { textContent: (x.email || "") + (x.date ? " · " + dayOf(x.date) : "") }));
+    learnersBox.append(el("div", { className: "row" }, who, del));
+  });
 
   const title = el("input", { placeholder: "عنوان الدرس (مثلا: Greetings)" });
   const content = el("textarea", { placeholder: "نص الدرس بالإنجليزية…", style: "direction:ltr;text-align:left" });
@@ -113,8 +139,11 @@ async function showDashboard() {
   const out = el("button", { className: "del", textContent: "خروج" });
   out.onclick = () => signOut(auth);
 
-  app.replaceChildren(el("h1", { textContent: "لوحة التحكم" }), stats,
-    el("h2", { textContent: "آخر 7 أيام" }), daysBox,
+  app.replaceChildren(el("h1", { textContent: "لوحة التحكم" }),
+    loadErr ? el("p", { className: "err", textContent: loadErr }) : "",
+    stats,
+    el("h2", { textContent: "تسجيلات آخر 7 أيام" }), daysBox,
+    el("h2", { textContent: "المتعلمون" }), learnersBox,
     el("h2", { textContent: "درس جديد" }), el("div", { className: "box" }, title, content, words, add),
     el("h2", { textContent: "الدروس" }), list, el("p", {}, out));
 }
