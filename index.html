@@ -1,12 +1,95 @@
-< signInWithPopup(auth, new GoogleAuthProvider()); }
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تعلم الإنجليزية</title>
+<style>
+:root{--bg:#f4f1ea;--card:#fff;--ink:#1d2433;--muted:#6b7385;--accent:#2b5adb;--accent-ink:#fff;--line:#e2dfd6;--ok:#2f8f5b}
+@media (prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1b2029;--ink:#eceff5;--muted:#8d96a8;--accent:#6c8cff;--accent-ink:#0b0e14;--line:#2a3140;--ok:#5fcf93;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI",Tahoma,"Noto Sans Arabic",sans-serif;padding:24px 16px}
+main{max-width:520px;margin:0 auto}
+h1{font-size:26px;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 20px}
+.item{display:flex;align-items:center;gap:12px;width:100%;text-align:right;padding:16px;margin-bottom:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;color:var(--ink);font:inherit;font-size:17px;cursor:pointer}
+.item .t{flex:1}
+.item .ok{color:var(--ok);font-weight:700}
+.back{background:none;border:0;color:var(--accent);font:inherit;font-size:16px;padding:0;margin-bottom:16px;cursor:pointer}
+.text{white-space:pre-wrap;line-height:1.8;font-size:17px;direction:ltr;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+td{padding:12px;border-bottom:1px solid var(--line)}
+td:first-child{direction:ltr;text-align:left;font-weight:600}
+.done{margin-top:16px;width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-ink);font:inherit;font-size:17px;font-weight:600;cursor:pointer}
+.gbtn{width:100%;padding:15px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;font-size:17px;font-weight:600;cursor:pointer;margin-top:16px}
+.out{background:none;border:0;color:var(--muted);font:inherit;font-size:14px;padding:0;margin-top:24px;cursor:pointer}
+.err{color:#b3412f;margin-top:12px}
+.msg{color:var(--muted);text-align:center;padding:32px 0}
+
+/* شاشة الدخول: البداية كحلة كاملة، من بعد كتنقص وكتبان الفورم */
+body.login{padding:0}
+body.login main{max-width:none;margin:0}
+.hero{background:#000;color:#fff;height:100vh;height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 24px;border-radius:0 0 50% 50% / 0 0 90px 90px;overflow:hidden;transition:height .9s cubic-bezier(.77,0,.18,1)}
+.hero.go{height:260px}
+.hero h1{margin:0;font-size:36px;letter-spacing:.02em}
+.hero p{margin:10px 0 0;color:#a9b0bf;font-size:16px}
+.sheet{max-width:520px;margin:0 auto;padding:32px 20px;opacity:0;transform:translateY(24px);transition:opacity .6s .55s,transform .6s .55s}
+.hero.go + .sheet{opacity:1;transform:none}
+.sheet h2{font-size:24px;margin:0 0 6px}
+@media (prefers-reduced-motion:reduce){.hero,.sheet{transition:none}}
+</style>
+</head>
+<body class="login">
+<main id="app"><div class="hero"><h1>تعلم الإنجليزية</h1><p>كلمة بكلمة، كل نهار</p></div></main>
+
+<script type="module">
+import { db, auth } from "./config.js";
+import { collection, getDocs, getDoc, query, orderBy, doc, setDoc, increment, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+const app = document.getElementById("app");
+const today = new Date().toISOString().slice(0, 10);
+const t0 = performance.now();
+let splashPlayed = false;
+
+const setLogin = on => document.body.classList.toggle("login", on);
+
+function el(tag, props = {}, ...kids) {
+  const n = Object.assign(document.createElement(tag), props);
+  n.append(...kids);
+  return n;
+}
+
+let done = [];
+try { done = JSON.parse(localStorage.getItem("done") || "[]"); } catch (e) {}
+const saveDone = () => { try { localStorage.setItem("done", JSON.stringify(done)); } catch (e) {} };
+
+let lessons = [];
+
+function showLogin(error = "") {
+  setLogin(true);
+  const g = el("button", { className: "gbtn", textContent: "دخل بـ Google" });
+  g.onclick = async () => {
+    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
     catch (e) { console.error(e); showLogin("ما قدرناش ندخلو. جرب فـ Chrome وعاود."); }
   };
-  app.replaceChildren(
+  const hero = el("div", { className: "hero" + (splashPlayed ? " go" : "") },
     el("h1", { textContent: "تعلم الإنجليزية" }),
+    el("p", { textContent: "كلمة بكلمة، كل نهار" }));
+  const sheet = el("div", { className: "sheet" },
+    el("h2", { textContent: "مرحبا بيك" }),
     el("p", { className: "sub", textContent: "دخل بحساب Google ديالك باش تبدا الدروس." }),
     g,
     error ? el("p", { className: "err", textContent: error }) : ""
   );
+  app.replaceChildren(hero, sheet);
+  if (!splashPlayed) {
+    splashPlayed = true;
+    const wait = Math.max(0, 1000 - (performance.now() - t0));
+    setTimeout(() => requestAnimationFrame(() => hero.classList.add("go")), wait);
+  }
 }
 
 async function register(u) {
@@ -32,6 +115,7 @@ function logoutBtn() {
 }
 
 function showList() {
+  setLogin(false);
   app.replaceChildren(
     el("h1", { textContent: "تعلم الإنجليزية" }),
     el("p", { className: "sub", textContent: done.length + " من " + lessons.length + " دروس مكملين" })
@@ -48,6 +132,7 @@ function showList() {
 }
 
 function showLesson(l) {
+  setLogin(false);
   const back = el("button", { className: "back", textContent: "← الدروس" });
   back.onclick = showList;
   const finish = el("button", { className: "done" });
@@ -69,6 +154,7 @@ function showLesson(l) {
 
 onAuthStateChanged(auth, async u => {
   if (!u) return showLogin();
+  setLogin(false);
   app.replaceChildren(el("p", { className: "msg", textContent: "كنحمل الدروس…" }));
   register(u);
   try {
