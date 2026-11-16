@@ -40,6 +40,15 @@ td:first-child{direction:ltr;text-align:left;font-weight:600}
 .gbtn{width:100%;padding:15px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;font-size:17px;font-weight:600;cursor:pointer;margin-top:16px}
 .out{background:none;border:0;color:var(--muted);font:inherit;font-size:14px;padding:0;margin-top:24px;cursor:pointer}
 
+.spk{flex:none;width:34px;height:34px;border-radius:50%;border:0;background:var(--ink);color:var(--bg);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.spk.on{background:var(--accent);color:var(--accent-ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:12px;overflow:hidden}
+.sent{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.sent:last-child{border:0}
+.sent>div{flex:1}
+.sent b{display:block;direction:ltr;text-align:left;font-size:16px;font-weight:600}
+.sent span{color:var(--muted);font-size:13px}
+td.sp{width:52px;text-align:left}
 .hero{background:#000;color:#fff;height:100vh;height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 24px;border-radius:0 0 50% 50% / 0 0 90px 90px;overflow:hidden;transition:height .9s cubic-bezier(.77,0,.18,1)}
 .hero.go{height:260px}
 .hero h1{margin:0;font-size:36px;letter-spacing:.02em}
@@ -146,9 +155,37 @@ function showList() {
   app.replaceChildren(top, wrap);
 }
 
+const canSpeak = "speechSynthesis" in window;
+const ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/></svg>';
+let seq = 0;
+
+function speak(text, btn, next) {
+  const my = ++seq;
+  try { speechSynthesis.cancel(); } catch (e) {}
+  document.querySelectorAll(".spk.on").forEach(b => b.classList.remove("on"));
+  if (btn) btn.classList.add("on");
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "en-US"; u.rate = 0.9;
+  const end = () => {
+    if (my !== seq) return;
+    if (btn) btn.classList.remove("on");
+    if (next) next();
+  };
+  u.onend = end; u.onerror = end;
+  speechSynthesis.speak(u);
+}
+
+function spkBtn(text) {
+  const b = el("button", { className: "spk" });
+  b.innerHTML = ICON;
+  b.setAttribute("aria-label", "سمع");
+  b.onclick = () => speak(text, b);
+  return b;
+}
+
 function showLesson(l) {
   const back = el("button", { className: "back", textContent: "← الدروس" });
-  back.onclick = showList;
+  back.onclick = () => { seq++; try { speechSynthesis.cancel(); } catch (e) {} showList(); };
   const finish = el("button", { className: "done" });
   const sync = () => { finish.textContent = done.includes(l.id) ? "مكمل ✓ (كليكي باش تلغيه)" : "كملت هاد الدرس"; };
   finish.onclick = () => {
@@ -158,10 +195,36 @@ function showLesson(l) {
   sync();
   const top = el("div", { className: "top" }, back, el("h1", { className: "lt", textContent: l.title }));
   const wrap = el("div", { className: "wrap" });
+
+  if (l.sentences && l.sentences.length) {
+    const card = el("div", { className: "card" });
+    l.sentences.forEach(s => {
+      const row = el("div", { className: "sent" },
+        el("div", {}, el("b", { textContent: s.en }), el("span", { textContent: s.ar || "" })));
+      if (canSpeak) row.append(spkBtn(s.en));
+      card.append(row);
+    });
+    wrap.append(card);
+    if (canSpeak) {
+      const all = el("button", { className: "done", textContent: "اسمع الجمل كاملة" });
+      all.style.marginTop = "0"; all.style.marginBottom = "12px";
+      all.onclick = () => {
+        const btns = [...card.querySelectorAll(".spk")];
+        let i = 0;
+        const go = () => { if (i < btns.length) { const j = i++; speak(l.sentences[j].en, btns[j], go); } };
+        go();
+      };
+      wrap.append(all);
+    }
+  }
   if (l.content) wrap.append(el("div", { className: "text", textContent: l.content }));
   if (l.words && l.words.length) {
     const t = el("table");
-    l.words.forEach(w => t.append(el("tr", {}, el("td", { textContent: w.en }), el("td", { textContent: w.ar }))));
+    l.words.forEach(w => {
+      const tr = el("tr", {}, el("td", { textContent: w.en }), el("td", { textContent: w.ar }));
+      if (canSpeak) tr.append(el("td", { className: "sp" }, spkBtn(w.en)));
+      t.append(tr);
+    });
     wrap.append(t);
   }
   wrap.append(finish);
