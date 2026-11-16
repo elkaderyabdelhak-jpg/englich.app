@@ -116,15 +116,18 @@ async function showDashboard() {
   });
 
   const title = el("input", { placeholder: "عنوان الدرس (مثلا: Greetings)" });
-  const content = el("textarea", { placeholder: "نص الدرس بالإنجليزية…", style: "direction:ltr;text-align:left" });
+  const sentences = el("textarea", { placeholder: "الجمل، جملة فكل سطر مع الترجمة:\nHello, how are you? = مرحبا، كيداير؟\nNice to meet you. = متشرفين.", style: "direction:ltr;text-align:left" });
+  const content = el("textarea", { placeholder: "نص إضافي بالإنجليزية (اختياري)…", style: "direction:ltr;text-align:left" });
   const words = el("textarea", { placeholder: "الكلمات، كلمة فكل سطر:\nhello = مرحبا\nthank you = شكرا", style: "direction:ltr;text-align:left" });
   const add = el("button", { className: "primary", textContent: "زيد الدرس" });
   add.onclick = async () => {
     if (!title.value.trim()) return;
     const w = words.value.split("\n").map(s => s.split("=")).filter(p => p.length >= 2)
       .map(p => ({ en: p[0].trim(), ar: p.slice(1).join("=").trim() }));
+    const sn = sentences.value.split("\n").map(x => x.split("=")).filter(p => p[0].trim())
+      .map(p => ({ en: p[0].trim(), ar: p.slice(1).join("=").trim() }));
     add.disabled = true;
-    await addDoc(collection(db, "lessons"), { title: title.value.trim(), content: content.value.trim(), words: w, createdAt: serverTimestamp() });
+    await addDoc(collection(db, "lessons"), { title: title.value.trim(), sentences: sn, content: content.value.trim(), words: w, createdAt: serverTimestamp() });
     showDashboard();
   };
 
@@ -144,7 +147,7 @@ async function showDashboard() {
     stats,
     el("h2", { textContent: "تسجيلات آخر 7 أيام" }), daysBox,
     el("h2", { textContent: "المتعلمون" }), learnersBox,
-    el("h2", { textContent: "درس جديد" }), el("div", { className: "box" }, title, content, words, add),
+    el("h2", { textContent: "درس جديد" }), el("div", { className: "box" }, title, sentences, content, words, add),
     el("h2", { textContent: "الدروس" }), list, el("p", {}, out));
 }
 
