@@ -217,8 +217,8 @@ function showGame() {
   const area = el("div", { className: "play" });
   const opts = el("div", { className: "opts" });
   app.replaceChildren(top, el("div", { className: "wrap" }, hud, area, opts));
-  let score = 0, lives = 3, raf = 0, cur = null, locked = false;
-  const stop = () => { cancelAnimationFrame(raf); seq++; try { speechSynthesis.cancel(); } catch (e) {} };
+  let score = 0, lives = 3, raf = 0, cur = null, locked = false, timer = 0;
+  const stop = () => { cancelAnimationFrame(raf); clearTimeout(timer); seq++; try { speechSynthesis.cancel(); } catch (e) {} };
   back.onclick = () => { stop(); showList(); };
 
   function end(text, btnText, onBtn) {
@@ -235,7 +235,7 @@ function showGame() {
     if (ok) score++; else lives--;
     [...opts.children].forEach(x => { if (x.dataset.k === "1") x.classList.add("good"); });
     if (b && !ok) b.classList.add("bad");
-    setTimeout(next, 900);
+    timer = setTimeout(next, 900);
   }
   function next() {
     hud.replaceChildren(el("span", { textContent: "النقاط: " + score }), el("span", { textContent: "❤️".repeat(lives) }));
