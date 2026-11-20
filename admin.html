@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لوحة التحكم</title>
+<style>
+:root{--bg:#f4f1ea;--card:#fff;--ink:#1d2433;--muted:#6b7385;--accent:#2b5adb;--accent-ink:#fff;--line:#e2dfd6;--danger:#b3412f}
+@media (prefers-color-scheme:dark){:root{--bg:#12151c;--card:#1b2029;--ink:#eceff5;--muted:#8d96a8;--accent:#6c8cff;--accent-ink:#0b0e14;--line:#2a3140;--danger:#e07a68;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI",Tahoma,"Noto Sans Arabic",sans-serif;padding:24px 16px}
+main{max-width:560px;margin:0 auto}
+h1{font-size:26px;margin:0 0 16px}
+h2{font-size:18px;margin:28px 0 10px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+.stats{display:flex;gap:12px}
+.stat{flex:1;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.stat b{display:block;font-size:30px}
+.stat span{color:var(--muted);font-size:14px}
+input,textarea,select{width:100%;padding:12px;margin-bottom:10px;font:inherit;font-size:16px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+textarea{min-height:90px;resize:vertical}
+button{font:inherit;cursor:pointer}
+.primary{width:100%;padding:13px;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-size:16px;font-weight:600}
+.google{width:100%;padding:13px;margin-bottom:14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:16px;font-weight:600}
+.or{text-align:center;color:var(--muted);margin:0 0 14px;font-size:14px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border:0}
+.row .who{flex:1;min-width:0;overflow-wrap:anywhere}
+.row .who small{display:block;color:var(--muted);font-size:12px}
+.acts{display:flex;gap:14px;flex:none}
+.del{background:none;border:0;color:var(--danger);font-size:15px}
+.mail{background:none;border:0;color:var(--accent);font-size:15px;font-weight:600}
+.btns{display:flex;gap:8px;margin-bottom:12px}
+.sec{flex:1;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:15px;font-weight:600}
+.muted{color:var(--muted);font-size:14px}
+.err{color:var(--danger);margin:0 0 10px}
+</style>
+</head>
+<body>
+<main id="app"></main>
+
+<script type="module">
+import { db, auth } from "./config.js";
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { collection, getDocs, doc, addDoc, deleteDoc, query, orderBy, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const OWNER = "elkaderyabdelhak@gmail.com";
+const APP_URL = "https://elkaderyabdelhak-jpg.github.io/englich.app/";
+const SUBJECT = "وحشتينا فتعلم الإنجليزية 📚";
+const DEFAULT_MSG = "سلام {name}،\nدازت مدة ما دخلتيش لتطبيق تعلم الإنجليزية. حتى 5 دقايق فاليوم كتفرق، كمل الدروس من هنا:\n" + APP_URL;
+const app = document.getElementById("app");
+function el(tag, props = {}, ...kids) {
+  const n = Object.assign(document.createElement(tag), props);
+  n.append(...kids);
+  return n;
+}
+
+function showLogin(error = "") {
+  const g = el("button", { className: "google", textContent: "دخل بـ Google" });
+  g.onclick = async () => {
+    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+    catch (e) { console.error(e); showLogin("ما قدرناش ندخلو بـ Google. عاود."); }
+  };
+  const email = el("input", { type: "email", placeholder: "الإيميل", autocomplete: "username" });
+  const pass = el("input", { type: "password", placeholder: "كلمة السر", autocomplete: "current-password" });
+  const btn = el("button", { className: "primary", textContent: "دخل" });
+  btn.onclick = async () => {
+    try { await signInWithEmailAndPassword(auth, email.value, pass.value); }
+    catch (e) { showLogin("الإيميل ولا كلمة السر غالطين"); }
+  };
+  app.replaceChildren(el("h1", { textContent: "لوحة التحكم" }),
+    el("div", { className: "box" },
+      error ? el("p", { className: "err", textContent: error }) : "",
+      g, el("p", { className: "or", textContent: "ولا" }), email, pass, btn));
+}
+
+const dayOf = t => t.toISOString().slice(0, 10);
+const daysAgo = d => Math.floor((Date.now() - d) / 864e5);
+
+async function showDashboard() {
+  app.replaceChildren(el("p", { className: "muted", textContent: "كنحمل…" }));
+
+  let learners = [], loadErr = "";
+  try {
+    const snap = await getDocs(collection(db, "learners"));
+    learners = snap.docs.map(x => ({ id: x.id, ...x.data() }))
+      .filter(x => x.email !== OWNER)
+      .map(x => {
+        const created = x.createdAt && x.createdAt.toDate ? x.createdAt.toDate() : null;
+        const seen = x.lastSeen && x.lastSeen.toDate ? x.lastSeen.toDate() : null;
+        return { ...x, date: created, seen: seen || created, hasSeen: !!seen };
+      })
+      .sort((a, b) => (a.seen || 0) - (b.seen || 0));
+  } catch (e) {
+    console.error(e);
+    loadErr = "ما قدرناش نقراو لائحة المسجلين. خاص تعدل قواعد Firebase باش الإدمين يقرا learners.";
+  }
+
+  const perDay = {};
+  learners.forEach(x => { if (x.date) { const k = dayOf(x.date); perDay[k] = (perDay[k] || 0) + 1; } });
+  const days = Object.keys(perDay).sort().reverse().slice(0, 7).map(k => ({ day: k, count: perDay[k] }));
+  const todayCount = perDay[dayOf(new Date())] || 0;
+
+  const lessonsSnap = await getDocs(query(collection(db, "lessons"), orderBy("createdAt", "desc")));
+
+  const stats = el("div", { className: "stats" },
+    el("div", { className: "stat" }, el("b", { textContent: learners.length }), el("span", { textContent: "مجموع المسجلين" })),
+    el("div", { className: "stat" }, el("b", { textContent: todayCount }), el("span", { textContent: "مسجلين اليوم" })));
+
+  const daysBox = el("div", { className: "box" });
+  if (!days.length) daysBox.append(el("span", { className: "muted", textContent: "ما كاين حتى تسجيل" }));
+  days.forEach(x => daysBox.append(el("div", { className: "row" }, el("span", { textContent: x.day }), el("b", { textContent: x.count }))));
+
+  // ---- المتعلمون + إرسال الرسائل ----
+  const sel = el("select");
+  [[0, "كلشي"], [1, "ما دخلوش من يوم"], [3, "ما دخلوش من 3 أيام"], [7, "ما دخلوش من 7 أيام"], [14, "ما دخلوش من 14 يوم"]]
+    .forEach(([v, t]) => sel.append(el("option", { value: String(v), textContent: t })));
+  sel.value = "3";
+  const msg = el("textarea", { value: DEFAULT_MSG, style: "min-height:130px" });
+  const count = el("p", { className: "muted", style: "margin:0 0 8px" });
+  const listBox = el("div");
+  let shown = [];
+
+  const buildMail = (to, bcc, name) => {
+    const body = msg.value.replace(/ ?\{name\}/g, name ? " " + name : "");
+    return "mailto:" + (to || "") + "?" +
+      (bcc ? "bcc=" + encodeURIComponent(bcc.join(",")) + "&" : "") +
+      "subject=" + encodeURIComponent(SUBJECT) + "&body=" + encodeURIComponent(body);
+  };
+  const emailsOf = () => shown.map(x => x.email).filter(Boolean);
+
+  const sendAll = el("button", { className: "sec", textContent: "صيفط للكل" });
+  sendAll.onclick = () => {
+    const to = emailsOf();
+    if (!to.length) return alert("ما كاين حتى واحد فاللائحة");
+    const url = buildMail("", to, "");
+    if (url.length > 1800) return alert("اللائحة طويلة بزاف، استعمل زر نسخ الإيميلات وحطهم فخانة Bcc.");
+    location.href = url;
+  };
+  const copyAll = el("button", { className: "sec", textContent: "نسخ الإيميلات" });
+  copyAll.onclick = async () => {
+    const to = emailsOf();
+    if (!to.length) return alert("ما كاين حتى واحد فاللائحة");
+    try { await navigator.clipboard.writeText(to.join(", ")); alert("تنسخو " + to.length + " إيميل"); }
+    catch (e) { prompt("نسخ الإيميلات:", to.join(", ")); }
+  };
+
+  function renderList() {
+    const min = +sel.value;
+    shown = learners.filter(x => min === 0 || !x.seen || daysAgo(x.seen) >= min);
+    count.textContent = shown.length + " متعلم";
+    listBox.replaceChildren();
+    if (!shown.length) listBox.append(el("span", { className: "muted", textContent: "ما كاين حتى متعلم فهاد الفلتر 🎉" }));
+    shown.forEach(x => {
+      const del = el("button", { className: "del", textContent: "مسح" });
+      del.onclick = async () => {
+        if (!confirm("واش بصح بغيتي تمسح هاد المتعلم من اللائحة؟")) return;
+        try { await deleteDoc(doc(db, "learners", x.id)); showDashboard(); }
+        catch (e) { console.error(e); alert("ما قدرناش نمسحو. خاص تعدل قواعد Firebase."); }
+      };
+      let seenTxt = "";
+      if (x.seen) {
+        const n = daysAgo(x.seen);
+        seenTxt = " · " + (x.hasSeen ? "آخر دخول: " : "تسجل: ") + (n <= 0 ? "اليوم" : "قبل " + n + " يوم");
+      }
+      const who = el("div", { className: "who" }, x.name || x.email || x.id,
+        el("small", { textContent: (x.email || "") + seenTxt }));
+      const acts = el("div", { className: "acts" });
+      if (x.email) {
+        const m = el("button", { className: "mail", textContent: "رسالة" });
+        m.onclick = () => { location.href = buildMail(x.email, null, x.name || ""); };
+        acts.append(m);
+      }
+      acts.append(del);
+      listBox.append(el("div", { className: "row" }, who, acts));
+    });
+  }
+  sel.onchange = renderList;
+  renderList();
+
+  const learnersBox = el("div", { className: "box" },
+    sel, count,
+    el("p", { className: "muted", style: "margin:0 0 6px", textContent: "نص الرسالة ({name} كيتبدل بالسمية):" }),
+    msg,
+    el("div", { className: "btns" }, sendAll, copyAll),
+    listBox);
+
+  const title = el("input", { placeholder: "عنوان الدرس (مثلا: Greetings)" });
+  const sentences = el("textarea", { placeholder: "الجمل، جملة فكل سطر مع الترجمة:\nHello, how are you? = مرحبا، كيداير؟\nNice to meet you. = متشرفين.", style: "direction:ltr;text-align:left" });
+  const content = el("textarea", { placeholder: "نص إضافي بالإنجليزية (اختياري)…", style: "direction:ltr;text-align:left" });
+  const words = el("textarea", { placeholder: "الكلمات، كلمة فكل سطر:\nhello = مرحبا\nthank you = شكرا", style: "direction:ltr;text-align:left" });
+  const add = el("button", { className: "primary", textContent: "زيد الدرس" });
+  add.onclick = async () => {
+    if (!title.value.trim()) return;
+    const w = words.value.split("\n").map(s => s.split("=")).filter(p => p.length >= 2)
+      .map(p => ({ en: p[0].trim(), ar: p.slice(1).join("=").trim() }));
+    const sn = sentences.value.split("\n").map(x => x.split("=")).filter(p => p[0].trim())
+      .map(p => ({ en: p[0].trim(), ar: p.slice(1).join("=").trim() }));
+    add.disabled = true;
+    await addDoc(collection(db, "lessons"), { title: title.value.trim(), sentences: sn, content: content.value.trim(), words: w, createdAt: serverTimestamp() });
+    showDashboard();
+  };
+
+  const list = el("div", { className: "box" });
+  if (lessonsSnap.empty) list.append(el("span", { className: "muted", textContent: "ما زدتي حتى درس" }));
+  lessonsSnap.docs.forEach(d => {
+    const del = el("button", { className: "del", textContent: "مسح" });
+    del.onclick = async () => { if (confirm("واش بصح بغيتي تمسح هاد الدرس؟")) { await deleteDoc(doc(db, "lessons", d.id)); showDashboard(); } };
+    list.append(el("div", { className: "row" }, el("span", { textContent: d.data().title }), del));
+  });
+
+  const out = el("button", { className: "del", textContent: "خروج" });
+  out.onclick = () => signOut(auth);
+
+  app.replaceChildren(el("h1", { textContent: "لوحة التحكم" }),
+    loadErr ? el("p", { className: "err", textContent: loadErr }) : "",
+    stats,
+    el("h2", { textContent: "تسجيلات آخر 7 أيام" }), daysBox,
+    el("h2", { textContent: "المتعلمون" }), learnersBox,
+    el("h2", { textContent: "درس جديد" }), el("div", { className: "box" }, title, sentences, content, words, add),
+    el("h2", { textContent: "الدروس" }), list, el("p", {}, out));
+}
+
+onAuthStateChanged(auth, async u => {
+  if (!u) return showLogin();
+  if (u.email !== OWNER) {
+    await signOut(auth);
+    return showLogin("هاد الحساب ماشي مسموح ليه. دخل بـ " + OWNER);
+  }
+  showDashboard();
+});
+</script>
+</body>
+</html>
